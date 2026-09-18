@@ -1,0 +1,1041 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>FPS Egg Tycoon - Crazy Update</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;900&family=Space+Mono:wght@700&display=swap" rel="stylesheet">
+    <style>
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; font-family: 'Nunito', sans-serif; background-color: #000; user-select: none; }
+        #game-container { width: 100%; height: 100%; position: relative; }
+        #canvas-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+        
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; }
+        
+        .glass-panel { background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3); border-radius: 16px; }
+
+        #crosshair {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 8px; height: 8px; background: rgba(255,255,255,0.9); border: 2px solid rgba(0,0,0,0.5); border-radius: 50%;
+            pointer-events: none; z-index: 20; transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .crosshair-active { transform: translate(-50%, -50%) scale(2) !important; background: #facc15 !important; border-color: #ca8a04 !important; }
+
+        #hud { position: absolute; top: 24px; right: 24px; display: flex; flex-direction: column; align-items: flex-end; gap: 12px; z-index: 15; pointer-events: auto; }
+        .stat-panel { padding: 16px 24px; min-width: 220px; transition: transform 0.2s; }
+        .money-text { font-family: 'Space Mono', monospace; font-size: 2.5rem; font-weight: 900; background: linear-gradient(to right, #4ade80, #10b981); -webkit-background-clip: text; -webkit-text-fill-color: transparent; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.4)); line-height: 1.1; }
+        
+        #save-indicator { display: inline-flex; align-items: center; gap: 8px; color: #cbd5e1; font-size: 0.8rem; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; padding: 6px 12px; border-radius: 20px; opacity: 0.4; transition: opacity 0.3s; }
+        .save-dot { width: 8px; height: 8px; background-color: #facc15; border-radius: 50%; box-shadow: 0 0 8px #facc15; }
+
+        .modal-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(10px); z-index: 100; display: flex; justify-content: center; align-items: center; pointer-events: auto; opacity: 0; pointer-events: none; transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .modal-overlay.active { opacity: 1; pointer-events: auto; }
+        .modal-card { width: 90%; max-width: 800px; max-height: 85vh; overflow-y: auto; padding: 32px; color: white; transform: scale(0.9); transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        .modal-overlay.active .modal-card { transform: scale(1); }
+        
+        .btn-close-modal {
+            background: linear-gradient(145deg, #ef4444, #b91c1c); border: none; color: white; font-weight: 900; font-size: 1.2rem;
+            padding: 12px 32px; border-radius: 12px; cursor: pointer; transition: all 0.1s;
+            box-shadow: 0 6px 0 #7f1d1d, 0 10px 15px rgba(0,0,0,0.3); text-transform: uppercase; letter-spacing: 1px;
+            display: block; margin: 24px auto 0 auto;
+        }
+        .btn-close-modal:active { transform: translateY(6px); box-shadow: 0 0px 0 #7f1d1d, 0 4px 6px rgba(0,0,0,0.3); }
+
+        #interaction-tooltip {
+            position: absolute; top: 60%; left: 50%; transform: translateX(-50%) translateY(20px);
+            padding: 12px 24px; display: none; z-index: 20; text-align: center;
+            animation: popIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+        @keyframes popIn { from { transform: translateX(-50%) translateY(40px) scale(0.8); opacity: 0; } to { transform: translateX(-50%) translateY(0) scale(1); opacity: 1; } }
+
+        #blocker {
+            position: absolute; width: 100%; height: 100%; background-color: rgba(0,0,0,0.9); backdrop-filter: blur(15px);
+            z-index: 50; display: flex; flex-direction: column; justify-content: center; align-items: center; pointer-events: auto;
+        }
+        #instructions { text-align: center; color: white; cursor: not-allowed; padding: 48px; pointer-events: none; opacity: 0.5; transition: all 0.3s; }
+        #instructions.ready { cursor: pointer; pointer-events: auto; opacity: 1; }
+        #instructions.ready:hover { transform: scale(1.05); }
+        .click-pulse { animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; text-shadow: 0 0 30px #3b82f6; } 100% { opacity: 0.5; } }
+
+        #labels-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 5; pointer-events: none; overflow: hidden; }
+        
+        @keyframes floatMoney {
+            0% { transform: translateY(0) scale(0.5); opacity: 0; }
+            15% { transform: translateY(-20px) scale(1.3); opacity: 1; }
+            30% { transform: translateY(-30px) scale(1); opacity: 1; }
+            80% { transform: translateY(-80px) scale(1); opacity: 1; }
+            100% { transform: translateY(-100px) scale(0.8); opacity: 0; }
+        }
+        .floating-money {
+            position: absolute; pointer-events: none; animation: floatMoney 1.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+            font-family: 'Space Mono', monospace; font-weight: 900;
+            text-shadow: 0px 3px 0px #064e3b, 0px 0px 8px rgba(0,0,0,0.8);
+            font-size: 1.8rem; color: #4ade80; text-align: center; transform: translate(-50%, -50%); z-index: 20;
+        }
+        .floating-money.shiny { color: #facc15; text-shadow: 0px 3px 0px #854d0e, 0px 0px 15px rgba(250,204,21,0.6); font-size: 2.2rem; z-index: 21; }
+        
+        #toast-container { position: absolute; top: 24px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; flex-direction: column; gap: 12px; pointer-events: none; }
+        .toast { background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(8px); border-left: 6px solid #3b82f6; padding: 16px 24px; color: white; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.4); animation: slideDown 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), fadeOut 0.5s ease-in 4s forwards; }
+        .toast-rare { border-left-color: #facc15; background: rgba(40, 35, 10, 0.95); }
+        .toast-meteor { border-left-color: #ef4444; background: rgba(40, 10, 10, 0.95); animation: pulseAlert 0.5s infinite, slideDown 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), fadeOut 0.5s ease-in 6s forwards; }
+        @keyframes slideDown { from { transform: translateY(-50px) scale(0.9); opacity: 0; } to { transform: translateY(0) scale(1); opacity: 1; } }
+        @keyframes fadeOut { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(-20px); } }
+        @keyframes pulseAlert { 0% { box-shadow: 0 0 0px #ef4444; } 50% { box-shadow: 0 0 20px #ef4444; } 100% { box-shadow: 0 0 0px #ef4444; } }
+
+        @keyframes screenShake { 0% { transform: translate(0, 0); } 20% { transform: translate(-8px, 6px); } 40% { transform: translate(6px, -4px); } 60% { transform: translate(-6px, -6px); } 80% { transform: translate(4px, 4px); } 100% { transform: translate(0, 0); } }
+        .shake { animation: screenShake 0.4s ease-out; }
+        .shake-heavy { animation: screenShake 0.8s ease-out; }
+
+        /* Meteor Overlay Warning */
+        #meteor-warning { position: absolute; inset: 0; background: radial-gradient(circle, transparent 50%, rgba(239, 68, 68, 0.4) 100%); pointer-events: none; z-index: 2; opacity: 0; transition: opacity 1s; }
+        #meteor-warning.active { opacity: 1; animation: flashRed 1s infinite; }
+        @keyframes flashRed { 0% { opacity: 0.3; } 50% { opacity: 0.8; } 100% { opacity: 0.3; } }
+    </style>
+</head>
+<body>
+<div id="game-container">
+    <div id="meteor-warning"></div>
+    <div id="blocker">
+        <div id="instructions" class="glass-panel">
+            <h1 id="instructions-title" class="text-6xl font-black mb-4 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-500 to-purple-500 drop-shadow-lg">FPS EGG TYCOON</h1>
+            <h2 class="text-2xl font-bold text-teal-300 mb-8 tracking-widest uppercase">The Crazy Update</h2>
+            <p id="instructions-text" class="text-2xl mb-8 text-gray-300 font-bold">Connecting to Cloud Servers...</p>
+            
+            <div class="grid grid-cols-2 gap-6 text-left text-gray-200 bg-black/40 p-8 rounded-xl border border-white/10 mb-6">
+                <div class="flex items-center gap-3"><span class="text-blue-400 font-black text-xl bg-blue-900/50 p-2 rounded">WASD</span> <span class="text-lg">Move</span></div>
+                <div class="flex items-center gap-3"><span class="text-blue-400 font-black text-xl bg-blue-900/50 p-2 rounded">MOUSE</span> <span class="text-lg">Look</span></div>
+                <div class="flex items-center gap-3"><span class="text-pink-400 font-black text-xl bg-pink-900/50 p-2 rounded">CLICK</span> <span class="text-lg">Interact & Hit</span></div>
+                <div class="flex items-center gap-3"><span class="text-yellow-400 font-black text-xl bg-yellow-900/50 p-2 rounded">NEW</span> <span class="text-lg">Physical Stations!</span></div>
+            </div>
+            
+            <p class="text-sm text-gray-400 italic">Hit glowing terminals to upgrade. Combine 3 identical animals to level them up!</p>
+        </div>
+    </div>
+
+    <div id="canvas-container"></div>
+    <div id="labels-container"></div>
+    <div id="toast-container"></div>
+    <div id="crosshair"></div>
+
+    <!-- Active Event HUD Banner -->
+    <div id="event-banner" class="absolute top-28 left-1/2 transform -translate-x-1/2 z-20 pointer-events-none transition-all duration-500 opacity-0 scale-90">
+        <div class="glass-panel px-6 py-2 border-yellow-400/50 flex items-center gap-3 shadow-2xl">
+            <span id="event-icon" class="text-2xl animate-bounce">⚡</span>
+            <div>
+                <div id="event-title" class="text-xs text-yellow-300 font-black uppercase tracking-widest">Active Event</div>
+                <div id="event-desc" class="text-white font-black text-sm tracking-wide">Meteor Shower Incoming!</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Collection Modal (Opened via 3D World) -->
+    <div id="collection-modal" class="modal-overlay">
+        <div class="modal-card glass-panel border-blue-500/30">
+            <div class="flex justify-between items-center mb-6 border-b border-white/10 pb-4">
+                <h2 class="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400">Animal Codex</h2>
+            </div>
+            <div id="collection-grid" class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <!-- Populated via JS -->
+            </div>
+            <button class="btn-close-modal" onclick="closeModal('collection-modal')">Close Book</button>
+        </div>
+    </div>
+
+    <div id="ui-layer">
+        <div id="hud">
+            <div id="save-indicator" class="glass-panel">
+                <div class="save-dot"></div> Auto-saving
+            </div>
+            <div class="stat-panel glass-panel">
+                <div class="text-blue-300 text-sm font-black uppercase tracking-widest mb-1">Treasury</div>
+                <div class="money-text" id="ui-money">$0</div>
+                <div class="mt-2 flex items-center gap-2 border-t border-white/10 pt-3">
+                    <span class="text-gray-400 text-xs uppercase font-bold tracking-wider">Income:</span>
+                    <span class="text-green-400 font-mono text-base font-bold" id="ui-income">+$0/sec</span>
+                </div>
+            </div>
+            
+            <div class="stat-panel glass-panel flex flex-col items-end">
+                <span class="text-xs text-gray-400 uppercase font-black tracking-widest">Population</span>
+                <span class="text-white font-bold text-2xl mt-1"><span id="ui-population" class="text-blue-400">0</span> <span class="text-gray-500 text-lg">/ <span id="ui-max-pop">50</span></span></span>
+            </div>
+            
+            <div class="stat-panel glass-panel mt-auto flex flex-col items-end opacity-80">
+                <span class="text-xs text-yellow-300 uppercase font-black tracking-widest">World Time</span>
+                <span class="text-white font-bold text-lg mt-1" id="ui-time">Day</span>
+            </div>
+        </div>
+
+        <div id="interaction-tooltip" class="glass-panel">
+            <span id="tooltip-text" class="text-lg font-bold">Interact</span>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    const STATE = {
+        money: 150, income: 0, entities: [], interactables: [],
+        discovered: { chicken: [false,false,false,false], pig: [false,false,false,false], cow: [false,false,false,false], dragon: [false,false,false,false] },
+        upgrades: { power: 1, speed: 1, capacity: 1 },
+        goldenRushMultiplier: 1.0
+    };
+
+    const UPGRADE_DATA = {
+        power: { baseCost: 500, maxLvl: 10, mult: 2.5, name: "Tool Power", desc: "Break heavy eggs faster", color: '#ef4444' },
+        speed: { baseCost: 300, maxLvl: 5, mult: 2.0, name: "Movement Speed", desc: "Run faster", color: '#3b82f6' },
+        capacity: { baseCost: 1000, maxLvl: 8, mult: 3.0, name: "Farm Capacity", desc: "Hold more animals", color: '#22c55e', val: (lvl) => 50 + (lvl-1)*25 }
+    };
+
+    const ANIMALS = {
+        chicken: { id: 'chicken', name: 'Chicken', baseIncome: 1 },
+        pig:     { id: 'pig', name: 'Pig', baseIncome: 5 },
+        cow:     { id: 'cow', name: 'Cow', baseIncome: 20 },
+        dragon:  { id: 'dragon', name: 'Dragon', baseIncome: 250 }
+    };
+
+    const EGGS = [
+        { id: 'basic', name: 'Speckled Egg', cost: 50, minWeight: 5, maxWeight: 35, hitsRequired: 3, color: 0xfef08a, iconColor: '#fef08a', pool: ['chicken', 'pig'] },
+        { id: 'spotted', name: 'Spotted Egg', cost: 250, minWeight: 15, maxWeight: 80, hitsRequired: 8, color: 0xfbcfe8, iconColor: '#f472b6', pool: ['chicken', 'pig', 'cow'] },
+        { id: 'golden', name: 'Golden Egg', cost: 1200, minWeight: 40, maxWeight: 200, hitsRequired: 15, color: 0xfacc15, iconColor: '#eab308', pool: ['pig', 'cow', 'dragon'] },
+        { id: 'cosmic', name: 'Cosmic Egg', cost: 8000, minWeight: 100, maxWeight: 500, hitsRequired: 25, color: 0xa855f7, iconColor: '#9333ea', pool: ['cow', 'dragon'] }
+    ];
+
+    const formatMoney = (amount) => {
+        if (amount >= 1000000) return '$' + (amount / 1000000).toFixed(2) + 'M';
+        if (amount >= 1000) return '$' + (amount / 1000).toFixed(1) + 'k';
+        return '$' + Math.floor(amount).toLocaleString();
+    };
+
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function playTone(freq, type, duration, vol=0.1) {
+        if(audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
+        osc.type = type; osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(); osc.stop(audioCtx.currentTime + duration);
+    }
+
+    const SOUNDS = {
+        buy: () => { playTone(600, 'sine', 0.1, 0.05); setTimeout(()=>playTone(800, 'sine', 0.15, 0.05), 100); },
+        error: () => playTone(200, 'sawtooth', 0.1, 0.08),
+        hit: () => { playTone(150 + Math.random()*50, 'square', 0.08, 0.1); },
+        break: () => { playTone(800, 'square', 0.2, 0.1); setTimeout(()=>playTone(1200, 'sine', 0.3, 0.15), 50); setTimeout(()=>playTone(1600, 'sine', 0.4, 0.1), 150); },
+        merge: () => { playTone(400, 'sine', 0.1, 0.1); setTimeout(() => playTone(600, 'sine', 0.2, 0.1), 100); setTimeout(() => playTone(1000, 'sine', 0.4, 0.15), 200); },
+        shiny: () => { playTone(1200, 'sine', 0.1, 0.1); playTone(1600, 'sine', 0.2, 0.1); playTone(2000, 'sine', 0.4, 0.1); },
+        siren: () => { playTone(300, 'sawtooth', 1.0, 0.1); setTimeout(()=>playTone(200, 'sawtooth', 1.0, 0.1), 1000); }
+    };
+
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0xbae6fd, 0.0035);
+
+    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.y = 1.6;
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    container.appendChild(renderer.domElement);
+
+    const controls = new THREE.PointerLockControls(camera, document.body);
+    const blocker = document.getElementById('blocker');
+    const instructions = document.getElementById('instructions');
+
+    instructions.addEventListener('click', () => { if(instructions.classList.contains('ready')) controls.lock(); });
+    controls.addEventListener('lock', () => blocker.style.display = 'none');
+    controls.addEventListener('unlock', () => {
+        if(!document.querySelector('.modal-overlay.active')) blocker.style.display = 'flex';
+    });
+
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); scene.add(ambientLight);
+    const dirLight = new THREE.DirectionalLight(0xfffbeb, 1.2);
+    dirLight.position.set(50, 80, 40); dirLight.castShadow = true;
+    dirLight.shadow.mapSize.width = 2048; dirLight.shadow.mapSize.height = 2048;
+    dirLight.shadow.camera.near = 0.5; dirLight.shadow.camera.far = 250;
+    dirLight.shadow.camera.left = -80; dirLight.shadow.camera.right = 80;
+    dirLight.shadow.camera.top = 80; dirLight.shadow.camera.bottom = -80;
+    scene.add(dirLight);
+
+    const skyGeo = new THREE.SphereGeometry(500, 32, 16);
+    const skyMat = new THREE.MeshBasicMaterial({ side: THREE.BackSide, fog: false, color: 0xffffff });
+    const sky = new THREE.Mesh(skyGeo, skyMat);
+    scene.add(sky);
+    
+    const skyColors = {
+        dayTop: new THREE.Color(0x3b82f6), dayBottom: new THREE.Color(0xbae6fd),
+        nightTop: new THREE.Color(0x020617), nightBottom: new THREE.Color(0x1e3a8a)
+    };
+    
+    function updateSkybox(timeCycle) {
+        const isNight = timeCycle > 0.3 && timeCycle < 0.7;
+        document.getElementById('ui-time').innerText = isNight ? "Night" : "Day";
+        document.getElementById('ui-time').style.color = isNight ? "#818cf8" : "#fde047";
+
+        const factor = (Math.sin(timeCycle * Math.PI * 2 - Math.PI/2) + 1) / 2;
+        
+        const currentTop = skyColors.nightTop.clone().lerp(skyColors.dayTop, factor);
+        const currentBottom = skyColors.nightBottom.clone().lerp(skyColors.dayBottom, factor);
+        
+        scene.fog.color.copy(currentBottom);
+        ambientLight.intensity = 0.2 + (factor * 0.5);
+        dirLight.intensity = 0.1 + (factor * 1.1);
+        
+        const colors = [];
+        for (let i = 0; i < skyGeo.attributes.position.count; i++) {
+            const y = skyGeo.attributes.position.getY(i);
+            const mix = Math.max(0, Math.min(1, (y + 50) / 150)); 
+            const c = currentBottom.clone().lerp(currentTop, mix);
+            colors.push(c.r, c.g, c.b);
+        }
+        skyGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        skyMat.vertexColors = true;
+    }
+
+    let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+    const velocity = new THREE.Vector3(); const direction = new THREE.Vector3();
+
+    document.addEventListener('keydown', (e) => {
+        switch (e.code) { case 'ArrowUp': case 'KeyW': moveForward = true; break; case 'ArrowLeft': case 'KeyA': moveLeft = true; break; case 'ArrowDown': case 'KeyS': moveBackward = true; break; case 'ArrowRight': case 'KeyD': moveRight = true; break; }
+    });
+    document.addEventListener('keyup', (e) => {
+        switch (e.code) { case 'ArrowUp': case 'KeyW': moveForward = false; break; case 'ArrowLeft': case 'KeyA': moveLeft = false; break; case 'ArrowDown': case 'KeyS': moveBackward = false; break; case 'ArrowRight': case 'KeyD': moveRight = false; break; }
+    });
+
+    const toolGroup = new THREE.Group();
+    const toolMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.8, roughness: 0.2 });
+    const toolHandle = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.4), toolMat);
+    toolHandle.rotation.x = Math.PI / 2; toolHandle.position.set(0.3, -0.2, -0.4);
+    const toolHead = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.15, 0.22), new THREE.MeshStandardMaterial({ color: 0x3b82f6, metalness: 0.6 }));
+    toolHead.position.set(0.3, -0.2, -0.6);
+    toolGroup.add(toolHandle); toolGroup.add(toolHead);
+    camera.add(toolGroup); scene.add(camera);
+
+    let isSwinging = false;
+    function swingTool() {
+        if(isSwinging) return; isSwinging = true;
+        let start = Date.now(); const duration = 160;
+        function anim() {
+            let t = (Date.now() - start) / duration;
+            if(t > 1) { toolGroup.rotation.x = 0; toolGroup.position.z = 0; isSwinging = false; return; }
+            let swing = Math.sin(t * Math.PI);
+            toolGroup.rotation.x = -swing * 0.8; toolGroup.position.z = -swing * 0.25;
+            requestAnimationFrame(anim);
+        }
+        anim();
+    }
+
+    const floorGeo = new THREE.PlaneGeometry(600, 600);
+    const floorMat = new THREE.MeshStandardMaterial({ color: 0x4ade80, roughness: 1.0 });
+    const floor = new THREE.Mesh(floorGeo, floorMat); floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+
+    const pathGeo = new THREE.PlaneGeometry(12, 300);
+    const pathMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.9 });
+    const path = new THREE.Mesh(pathGeo, pathMat); path.rotation.x = -Math.PI / 2; path.position.set(0, 0.02, 0); path.receiveShadow = true; scene.add(path);
+
+    const penSize = 45;
+    const fenceMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.8 });
+    function buildFence(x, z, length, rotY) {
+        for(let i=0; i<length; i+=3) {
+            const post = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.6, 0.4), fenceMat);
+            post.position.set(x + Math.cos(rotY)*i, 0.8, z + Math.sin(rotY)*i);
+            post.castShadow = true; post.receiveShadow = true; scene.add(post);
+            if(i < length-3) {
+                for(let h of [1.1, 0.5]) {
+                    const rail = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.15, 0.1), fenceMat);
+                    rail.position.set(x + Math.cos(rotY)*(i+1.5), h, z + Math.sin(rotY)*(i+1.5));
+                    rail.rotation.y = -rotY; rail.castShadow = true; scene.add(rail);
+                }
+            }
+        }
+    }
+    buildFence(-penSize - 6, -penSize, penSize*2, 0); buildFence(-penSize - 6, penSize, penSize*2, 0);
+    buildFence(-penSize - 6, -penSize, penSize*2, Math.PI/2); buildFence(penSize + 6, -penSize, penSize*2, Math.PI/2);
+
+    const sceneryClouds = [];
+    function spawnEnvironment() {
+        const treeMat = new THREE.MeshStandardMaterial({ color: 0x166534, roughness: 0.8 });
+        const trunkMat = new THREE.MeshStandardMaterial({ color: 0x78350f });
+        const rockMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.9 });
+
+        for(let i=0; i<120; i++) {
+            let x = (Math.random() - 0.5) * 450; let z = (Math.random() - 0.5) * 450;
+            if(Math.abs(x) < 55 && Math.abs(z) < 70) continue;
+
+            if(Math.random() > 0.35) {
+                const tree = new THREE.Group();
+                const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 1.0, 4), trunkMat); trunk.position.y = 2; trunk.castShadow = true; tree.add(trunk);
+                const leaves = new THREE.Mesh(new THREE.DodecahedronGeometry(3 + Math.random()*2), treeMat); leaves.position.y = 5.5; leaves.castShadow = true; tree.add(leaves);
+                tree.position.set(x, 0, z); scene.add(tree);
+            } else {
+                const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(1.5 + Math.random()*3), rockMat);
+                rock.position.set(x, 0.5, z); rock.rotation.set(Math.random(), Math.random(), Math.random()); rock.castShadow = true; scene.add(rock);
+            }
+        }
+
+        const cloudMat = new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, flatShading: true });
+        for(let i=0; i<40; i++) {
+            const cloud = new THREE.Group(); const clumps = 3 + Math.floor(Math.random()*5);
+            for(let j=0; j<clumps; j++) {
+                const cMesh = new THREE.Mesh(new THREE.DodecahedronGeometry(8 + Math.random()*12), cloudMat);
+                cMesh.position.set(Math.random()*20-10, Math.random()*5-2.5, Math.random()*20-10);
+                cMesh.scale.y = 0.6; cloud.add(cMesh);
+            }
+            cloud.position.set((Math.random()-0.5)*500, 100 + Math.random()*60, (Math.random()-0.5)*500);
+            scene.add(cloud); sceneryClouds.push(cloud);
+        }
+    }
+    spawnEnvironment();
+
+    const storeGroup = new THREE.Group(); storeGroup.position.set(0, 0, -25); scene.add(storeGroup);
+    
+    const sBase = new THREE.Mesh(new THREE.BoxGeometry(24, 0.8, 10), new THREE.MeshStandardMaterial({color: 0x1e293b})); sBase.position.y = 0.4; sBase.receiveShadow = true; storeGroup.add(sBase);
+    const sWall = new THREE.Mesh(new THREE.BoxGeometry(24, 6, 0.5), new THREE.MeshStandardMaterial({color: 0x0f172a})); sWall.position.set(0, 3, -4.5); sWall.castShadow = true; storeGroup.add(sWall);
+    const sRoof = new THREE.Mesh(new THREE.BoxGeometry(26, 1, 11), new THREE.MeshStandardMaterial({color: 0x3b82f6})); sRoof.position.y = 6.5; sRoof.castShadow = true; storeGroup.add(sRoof);
+    
+    for(let x of [-11, 11]) {
+        const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 6), new THREE.MeshStandardMaterial({color: 0xe2e8f0}));
+        pillar.position.set(x, 3, 4); pillar.castShadow = true; storeGroup.add(pillar);
+    }
+
+    EGGS.forEach((egg, i) => {
+        const xPos = (i - 1.5) * 5.5;
+        const ped = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.4, 1.5, 16), new THREE.MeshStandardMaterial({color: 0x334155})); ped.position.set(xPos, 0.75, 2); ped.castShadow = true; storeGroup.add(ped);
+        
+        const holoMat = new THREE.MeshStandardMaterial({color: egg.color, emissive: egg.color, emissiveIntensity: 0.5, transparent: true, opacity: 0.9});
+        const holoEgg = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 16), holoMat); holoEgg.scale.set(1, 1.3, 1); holoEgg.position.set(xPos, 2.8, 2); storeGroup.add(holoEgg);
+        egg.holoMesh = holoEgg;
+        
+        const hitbox = new THREE.Mesh(new THREE.BoxGeometry(3, 5, 3), new THREE.MeshBasicMaterial({visible: false})); hitbox.position.set(xPos, 2.5, 2);
+        hitbox.userData = { type: 'shop', egg: egg }; storeGroup.add(hitbox); STATE.interactables.push(hitbox);
+    });
+
+    const upgGroup = new THREE.Group(); upgGroup.position.set(-20, 0, -20); upgGroup.rotation.y = Math.PI/4; scene.add(upgGroup);
+    const uBase = new THREE.Mesh(new THREE.BoxGeometry(14, 0.5, 4), new THREE.MeshStandardMaterial({color: 0x1e293b})); uBase.position.y = 0.25; upgGroup.add(uBase);
+    const uWall = new THREE.Mesh(new THREE.BoxGeometry(14, 5, 1), new THREE.MeshStandardMaterial({color: 0x0f172a})); uWall.position.set(0, 2.5, -1); upgGroup.add(uWall);
+    
+    const upgTypes = ['power', 'speed', 'capacity'];
+    upgTypes.forEach((type, i) => {
+        const xPos = (i - 1) * 4;
+        const data = UPGRADE_DATA[type];
+        const btnMat = new THREE.MeshStandardMaterial({ color: data.color, emissive: data.color, emissiveIntensity: 0.4 });
+        const btn = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 0.5), btnMat);
+        btn.position.set(xPos, 2.5, 0); upgGroup.add(btn);
+        
+        const hitbox = new THREE.Mesh(new THREE.BoxGeometry(2.5, 3, 1.5), new THREE.MeshBasicMaterial({visible: false}));
+        hitbox.position.set(xPos, 2.5, 0); hitbox.userData = { type: 'upgrade', upg: type };
+        upgGroup.add(hitbox); STATE.interactables.push(hitbox);
+    });
+
+    const colGroup = new THREE.Group(); colGroup.position.set(20, 0, -20); colGroup.rotation.y = -Math.PI/4; scene.add(colGroup);
+    const cPed = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 2, 2.5, 8), new THREE.MeshStandardMaterial({color: 0x475569})); cPed.position.y = 1.25; colGroup.add(cPed);
+    const cBook = new THREE.Mesh(new THREE.BoxGeometry(2, 0.3, 1.5), new THREE.MeshStandardMaterial({color: 0x3b82f6, emissive: 0x2563eb, emissiveIntensity: 0.5}));
+    cBook.position.set(0, 3, 0); cBook.rotation.x = Math.PI/6; colGroup.add(cBook);
+    
+    const cHitbox = new THREE.Mesh(new THREE.BoxGeometry(4, 4, 4), new THREE.MeshBasicMaterial({visible: false})); cHitbox.position.y = 2.5;
+    cHitbox.userData = { type: 'collection' }; colGroup.add(cHitbox); STATE.interactables.push(cHitbox);
+
+    let bookHoverTime = 0;
+
+    function addPart(group, w, h, d, color, x, y, z, shiny) {
+        const mat = new THREE.MeshStandardMaterial({color, roughness: shiny?0.1:0.6, metalness: shiny?0.8:0.1});
+        if(shiny) { mat.emissive = new THREE.Color(0xfacc15); mat.emissiveIntensity = 0.4; }
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+        mesh.position.set(x, y, z); mesh.castShadow = true; mesh.receiveShadow = true;
+        group.add(mesh); return mesh;
+    }
+
+    function createAnimalModel(type, level, isShiny = false) {
+        const group = new THREE.Group();
+        const parts = { legs: [], wings: [], tail: null, head: null };
+        let mCol = 0xffffff, sCol = 0x333333;
+
+        if(level === 2) { mCol = 0x93c5fd; sCol = 0x1d4ed8; }
+        else if(level === 3) { mCol = 0xfacc15; sCol = 0xca8a04; }
+        else if(level >= 4) { mCol = 0xc084fc; sCol = 0x7e22ce; }
+        if(isShiny) { mCol = 0xfef08a; sCol = 0xeab308; }
+
+        if (type === 'chicken') {
+            if(level === 1 && !isShiny) mCol = 0xf8fafc;
+            addPart(group, 0.45, 0.45, 0.55, mCol, 0, 0.45, 0, isShiny);
+            parts.head = addPart(group, 0.28, 0.28, 0.28, mCol, 0, 0.75, 0.22, isShiny);
+            addPart(parts.head, 0.1, 0.06, 0.12, 0xf59e0b, 0, 0, 0.18, isShiny);
+            addPart(parts.head, 0.06, 0.16, 0.16, 0xef4444, 0, 0.18, -0.04, isShiny);
+            
+            const wL = addPart(group, 0.06, 0.25, 0.35, mCol, -0.26, 0.45, 0, isShiny);
+            const wR = addPart(group, 0.06, 0.25, 0.35, mCol, 0.26, 0.45, 0, isShiny);
+            parts.wings.push(wL, wR);
+            
+            const lL = addPart(group, 0.06, 0.25, 0.06, 0xf59e0b, -0.12, 0.12, 0, isShiny);
+            const lR = addPart(group, 0.06, 0.25, 0.06, 0xf59e0b, 0.12, 0.12, 0, isShiny);
+            parts.legs.push(lL, lR);
+        }
+        else if (type === 'pig') {
+            if(level === 1 && !isShiny) mCol = 0xf472b6;
+            addPart(group, 0.65, 0.55, 0.85, mCol, 0, 0.45, 0, isShiny);
+            parts.head = addPart(group, 0.45, 0.42, 0.42, mCol, 0, 0.65, 0.45, isShiny);
+            addPart(parts.head, 0.22, 0.16, 0.1, 0xdb2777, 0, -0.05, 0.25, isShiny);
+            addPart(parts.head, 0.08, 0.15, 0.05, mCol, -0.18, 0.2, 0, isShiny);
+            addPart(parts.head, 0.08, 0.15, 0.05, mCol, 0.18, 0.2, 0, isShiny);
+            
+            const lCol = (level === 1 && !isShiny) ? 0xdb2777 : sCol;
+            parts.legs.push(
+                addPart(group, 0.14, 0.25, 0.14, lCol, -0.22, 0.12, 0.3, isShiny),
+                addPart(group, 0.14, 0.25, 0.14, lCol, 0.22, 0.12, 0.3, isShiny),
+                addPart(group, 0.14, 0.25, 0.14, lCol, -0.22, 0.12, -0.3, isShiny),
+                addPart(group, 0.14, 0.25, 0.14, lCol, 0.22, 0.12, -0.3, isShiny)
+            );
+        }
+        else if (type === 'cow') {
+            if(level === 1 && !isShiny) mCol = 0xf8fafc;
+            const body = addPart(group, 0.8, 0.65, 1.2, mCol, 0, 0.6, 0, isShiny);
+            if(level === 1 && !isShiny) addPart(body, 0.82, 0.35, 0.5, 0x1e293b, 0, 0.05, 0, false);
+            addPart(body, 0.3, 0.1, 0.3, 0xf472b6, 0, -0.35, -0.1, false);
+            
+            parts.head = addPart(group, 0.42, 0.42, 0.45, mCol, 0, 0.95, 0.65, isShiny);
+            addPart(parts.head, 0.32, 0.22, 0.2, 0xf472b6, 0, -0.1, 0.25, isShiny);
+            addPart(parts.head, 0.06, 0.25, 0.06, 0xe2e8f0, -0.2, 0.25, 0, isShiny);
+            addPart(parts.head, 0.06, 0.25, 0.06, 0xe2e8f0, 0.2, 0.25, 0, isShiny);
+
+            const lCol = (level === 1 && !isShiny) ? 0x1e293b : sCol;
+            parts.legs.push(
+                addPart(group, 0.16, 0.4, 0.16, lCol, -0.28, 0.2, 0.45, isShiny),
+                addPart(group, 0.16, 0.4, 0.16, lCol, 0.28, 0.2, 0.45, isShiny),
+                addPart(group, 0.16, 0.4, 0.16, lCol, -0.28, 0.2, -0.45, isShiny),
+                addPart(group, 0.16, 0.4, 0.16, lCol, 0.28, 0.2, -0.45, isShiny)
+            );
+        }
+        else if (type === 'dragon') {
+            if(!isShiny) mCol = level === 1 ? 0x22c55e : (level===2 ? 0xef4444 : 0xa855f7);
+            addPart(group, 0.85, 0.85, 1.4, mCol, 0, 1.0, 0, isShiny);
+            parts.head = addPart(group, 0.55, 0.45, 0.65, mCol, 0, 1.5, 0.8, isShiny);
+            addPart(parts.head, 0.1, 0.1, 0.1, 0xff0000, -0.15, 0.1, 0.33, true);
+            addPart(parts.head, 0.1, 0.1, 0.1, 0xff0000, 0.15, 0.1, 0.33, true);
+
+            parts.tail = addPart(group, 0.3, 0.3, 1.2, mCol, 0, 0.8, -1.0, isShiny);
+
+            const wL = addPart(group, 1.5, 0.05, 0.8, mCol, -1.0, 1.4, 0, isShiny);
+            const wR = addPart(group, 1.5, 0.05, 0.8, mCol, 1.0, 1.4, 0, isShiny);
+            parts.wings.push(wL, wR);
+
+            parts.legs.push(
+                addPart(group, 0.2, 0.4, 0.2, sCol, -0.3, 0.2, 0.4, isShiny),
+                addPart(group, 0.2, 0.4, 0.2, sCol, 0.3, 0.2, 0.4, isShiny),
+                addPart(group, 0.2, 0.4, 0.2, sCol, -0.3, 0.2, -0.4, isShiny),
+                addPart(group, 0.2, 0.4, 0.2, sCol, 0.3, 0.2, -0.4, isShiny)
+            );
+        }
+
+        const scale = 1 + (level * 0.2); group.scale.set(scale, scale, scale);
+        
+        group.userData.updateAnim = function(time, isMoving) {
+            const speed = 15;
+            if(isMoving) {
+                const cycle = Math.sin(time * speed);
+                if(parts.legs.length === 2) {
+                    parts.legs[0].position.z = cycle * 0.15; parts.legs[1].position.z = -cycle * 0.15;
+                } else if(parts.legs.length === 4) {
+                    parts.legs[0].position.z = 0.3 + cycle * 0.2; parts.legs[1].position.z = 0.3 - cycle * 0.2;
+                    parts.legs[2].position.z = -0.3 - cycle * 0.2; parts.legs[3].position.z = -0.3 + cycle * 0.2;
+                }
+                if(parts.head) parts.head.rotation.x = Math.sin(time * speed * 0.5) * 0.1;
+                if(parts.tail) parts.tail.rotation.y = Math.sin(time * speed) * 0.2;
+            }
+            if(parts.wings.length > 0) {
+                const flap = Math.sin(time * (type==='dragon'?8:20));
+                parts.wings[0].rotation.z = flap * (type==='dragon'?0.5:0.2);
+                parts.wings[1].rotation.z = -flap * (type==='dragon'?0.5:0.2);
+            }
+            if(type === 'dragon') group.position.y = Math.sin(time * 3) * 0.3 + 0.5;
+            else group.position.y = Math.abs(Math.sin(time * speed)) * (isMoving?0.2:0);
+        };
+
+        return group;
+    }
+
+    const raycaster = new THREE.Raycaster();
+    const tooltip = document.getElementById('interaction-tooltip');
+    const tooltipText = document.getElementById('tooltip-text');
+    const crosshair = document.getElementById('crosshair');
+    let currentHover = null;
+
+    function checkInteractions() {
+        if(!controls.isLocked) return;
+        raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+        const intersects = raycaster.intersectObjects(STATE.interactables);
+        
+        if (intersects.length > 0 && intersects[0].distance < 8) {
+            const obj = intersects[0].object; currentHover = obj;
+            crosshair.classList.add('crosshair-active'); tooltip.style.display = 'block';
+            
+            if(obj.userData.type === 'shop') {
+                tooltip.style.borderTop = `4px solid ${obj.userData.egg.iconColor}`;
+                tooltipText.innerHTML = `Buy <b>${obj.userData.egg.name}</b><br><span style="color:#4ade80">$${formatMoney(obj.userData.egg.cost)}</span>`;
+            } else if (obj.userData.type === 'egg') {
+                tooltip.style.borderTop = '4px solid white';
+                let remaining = obj.userData.eggDef.hitsRequired - obj.userData.hits;
+                tooltipText.innerHTML = `Crack Egg! (${obj.userData.weight}kg)<br><span style="font-size:0.8em;color:#cbd5e1">${remaining} hits left</span>`;
+            } else if (obj.userData.type === 'upgrade') {
+                const uData = UPGRADE_DATA[obj.userData.upg];
+                const lvl = STATE.upgrades[obj.userData.upg];
+                tooltip.style.borderTop = `4px solid ${uData.color}`;
+                if(lvl >= uData.maxLvl) {
+                    tooltipText.innerHTML = `<b>${uData.name}</b><br><span style="color:#94a3b8">MAX LEVEL</span>`;
+                } else {
+                    const cost = Math.floor(uData.baseCost * Math.pow(uData.mult, lvl - 1));
+                    tooltipText.innerHTML = `<b>${uData.name}</b> (Lvl ${lvl} &rarr; ${lvl+1})<br><span style="color:#4ade80">$${formatMoney(cost)}</span><br><span style="font-size:0.7em;color:#94a3b8">${uData.desc}</span>`;
+                }
+            } else if (obj.userData.type === 'collection') {
+                tooltip.style.borderTop = `4px solid #3b82f6`;
+                tooltipText.innerHTML = `<b>📖 Animal Codex</b><br><span style="font-size:0.8em;color:#cbd5e1">Click to view discovered species</span>`;
+            }
+        } else {
+            currentHover = null; crosshair.classList.remove('crosshair-active'); tooltip.style.display = 'none';
+        }
+    }
+
+    document.addEventListener('mousedown', () => {
+        if(!controls.isLocked) return;
+        swingTool();
+        if(currentHover) {
+            if(currentHover.userData.type === 'shop') buyEgg(currentHover.userData.egg);
+            else if (currentHover.userData.type === 'egg') hitEgg(currentHover);
+            else if (currentHover.userData.type === 'upgrade') buyUpgrade(currentHover.userData.upg);
+            else if (currentHover.userData.type === 'collection') openModal('collection-modal');
+        }
+    });
+
+    window.openModal = function(id) {
+        controls.unlock();
+        const modal = document.getElementById(id); modal.classList.add('active');
+        if(id === 'collection-modal') renderCollection();
+    }
+    
+    window.closeModal = function(id) {
+        document.getElementById(id).classList.remove('active');
+        controls.lock();
+    }
+
+    function buyUpgrade(type) {
+        const data = UPGRADE_DATA[type]; const lvl = STATE.upgrades[type];
+        if(lvl >= data.maxLvl) return;
+        const cost = Math.floor(data.baseCost * Math.pow(data.mult, lvl - 1));
+        if(STATE.money >= cost) {
+            STATE.money -= cost; STATE.upgrades[type]++; SOUNDS.buy();
+            showToast("Upgrade Secured!", `${data.name} is now Level ${STATE.upgrades[type]}`);
+            spawnParticles(currentHover.position, data.color.replace('#','0x'), 15);
+            updateUI();
+        } else {
+            SOUNDS.error(); showToast("Too Expensive!", `You need $${formatMoney(cost)} for this upgrade.`);
+        }
+    }
+
+    function buyEgg(eggDef) {
+        if(STATE.money < eggDef.cost) { SOUNDS.error(); showToast("Not enough money!", "Keep farming!"); return; }
+        let cap = UPGRADE_DATA.capacity.val(STATE.upgrades.capacity);
+        if(STATE.entities.length >= cap) { SOUNDS.error(); showToast("Farm Full!", "Merge animals or buy capacity upgrade on the left."); return; }
+        
+        STATE.money -= eggDef.cost; updateUI(); SOUNDS.buy();
+        const weight = Math.floor(eggDef.minWeight + Math.random() * (eggDef.maxWeight - eggDef.minWeight));
+        spawnEggObject(eggDef, weight, 15);
+        showToast("Purchased!", `Dropped a ${weight}kg ${eggDef.name}!`);
+    }
+
+    function spawnEggObject(eggDef, weight, startY, isMeteor = false) {
+        const scaleFactor = 0.9 + (weight / 150);
+        const eMesh = new THREE.Mesh(new THREE.SphereGeometry(scaleFactor, 16, 16), new THREE.MeshStandardMaterial({ color: eggDef.color, roughness: 0.1, metalness: 0.3 }));
+        eMesh.geometry.scale(1, 1.3, 1);
+        
+        const dropX = (Math.random() - 0.5) * (penSize - 8); const dropZ = (Math.random() - 0.5) * (penSize - 8) + 15;
+        eMesh.position.set(dropX, startY, dropZ); eMesh.castShadow = true; eMesh.receiveShadow = true; scene.add(eMesh);
+        
+        eMesh.userData = { type: 'egg', eggDef: eggDef, weight: weight, hits: 0, targetY: scaleFactor * 1.3, velocity: 0, isMeteor: isMeteor };
+        STATE.interactables.push(eMesh);
+        return eMesh;
+    }
+
+    function hitEgg(eggMesh) {
+        SOUNDS.hit();
+        eggMesh.userData.hits += STATE.upgrades.power;
+        eggMesh.scale.setScalar(0.9); setTimeout(()=> { if(eggMesh.parent) eggMesh.scale.setScalar(1); }, 100);
+        spawnParticles(eggMesh.position, 0xffffff, 8);
+        
+        if(eggMesh.userData.hits >= eggMesh.userData.eggDef.hitsRequired) {
+            breakEgg(eggMesh);
+        }
+    }
+
+    function breakEgg(eggMesh) {
+        SOUNDS.break();
+        document.getElementById('canvas-container').classList.add('shake');
+        setTimeout(() => document.getElementById('canvas-container').classList.remove('shake'), 400);
+        spawnParticles(eggMesh.position, eggMesh.userData.eggDef.color, 30);
+        
+        const def = eggMesh.userData.eggDef;
+        const availablePool = def.pool;
+        const animalKey = availablePool[Math.floor(Math.random() * availablePool.length)];
+        
+        let level = 1;
+        const roll = Math.random();
+        if(roll > 0.85) level = 2;
+        if(roll > 0.97) level = 3;
+
+        const isShiny = Math.random() < 0.02;
+        if(isShiny) SOUNDS.shiny();
+
+        STATE.discovered[animalKey][level-1] = true;
+        
+        const index = STATE.interactables.indexOf(eggMesh);
+        if(index > -1) STATE.interactables.splice(index, 1);
+        scene.remove(eggMesh);
+
+        spawnEntity(animalKey, level, eggMesh.position.x, eggMesh.position.z, isShiny);
+        
+        let incomeVal = ANIMALS[animalKey].baseIncome * Math.pow(4, level - 1);
+        if(isShiny) incomeVal *= 5;
+        
+        showToast(isShiny ? "✨ SHINY ANIMAL FOUND! ✨" : "Egg Hatched!", `Unlocked Level ${level} ${ANIMALS[animalKey].name} (+${incomeVal}/s)`, isShiny);
+        updateUI();
+    }
+
+    function spawnEntity(type, level, x, z, isShiny = false) {
+        const group = createAnimalModel(type, level, isShiny);
+        group.position.set(x, 0, z); scene.add(group);
+        
+        const entity = {
+            id: type, level: level, isShiny: isShiny, group: group,
+            targetPos: new THREE.Vector3(x, 0, z),
+            moveTimer: 0, speed: 2.5 + Math.random() * 1.5
+        };
+        STATE.entities.push(entity);
+        checkMerges(type, level);
+    }
+
+    function checkMerges(type, level) {
+        const matches = STATE.entities.filter(e => e.id === type && e.level === level && !e.isShiny);
+        if(matches.length >= 3 && level < 4) {
+            for(let i=0; i<3; i++) {
+                const ent = matches[i];
+                const idx = STATE.entities.indexOf(ent);
+                if(idx > -1) STATE.entities.splice(idx, 1);
+                scene.remove(ent.group);
+            }
+            SOUNDS.merge();
+            const pos = matches[0].group.position;
+            spawnEntity(type, level + 1, pos.x, pos.z, false);
+            showToast("MERGE SUCCESSFUL!", `Combined into Level ${level+1} ${ANIMALS[type].name}!`, true);
+        }
+    }
+
+    function spawnParticles(pos, colorHex, count) {
+        const pGeo = new THREE.BoxGeometry(0.2, 0.2, 0.2);
+        const pMat = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.2 });
+        for(let i=0; i<count; i++) {
+            const mesh = new THREE.Mesh(pGeo, pMat);
+            mesh.position.copy(pos); mesh.position.y += 1;
+            scene.add(mesh);
+            particles.push({
+                mesh: mesh, velocity: new THREE.Vector3((Math.random()-0.5)*8, Math.random()*8 + 4, (Math.random()-0.5)*8),
+                life: 1.0, maxLife: 1.0
+            });
+        }
+    }
+
+    function createFloatingMoney(x, y, amount, isShiny) {
+        const el = document.createElement('div');
+        el.className = `floating-money ${isShiny ? 'shiny' : ''}`;
+        el.innerText = `+$${amount}`;
+        el.style.left = `${x}px`; el.style.top = `${y}px`;
+        document.getElementById('labels-container').appendChild(el);
+        setTimeout(() => el.remove(), 1500);
+    }
+
+    function spawnMeteorEgg() {
+        SOUNDS.siren();
+        const warning = document.getElementById('meteor-warning');
+        warning.classList.add('active');
+        showEventBanner("☄️ METEOR SHOWER", "Giant Meteor Eggs are raining down!", "#ef4444");
+        showToast("⚠️ METEOR EVENT ⚠️", "A meteor shower has started!", false);
+        
+        let spawnedCount = 0;
+        const meteorInterval = setInterval(() => {
+            spawnedCount++;
+            const meteorDef = { id: 'meteor', name: 'Meteor Egg', cost: 0, minWeight: 1000, maxWeight: 5000, hitsRequired: 50, color: 0xef4444, iconColor: '#ef4444', pool: ['dragon', 'cow'] };
+            const egg = spawnEggObject(meteorDef, 2500 + Math.random()*2000, 150, true);
+            egg.userData.velocity = -25;
+            
+            const trailInterval = setInterval(() => {
+                if(!egg.parent || egg.position.y <= egg.userData.targetY) { clearInterval(trailInterval); return; }
+                spawnParticles(egg.position, 0xf97316, 3);
+            }, 50);
+
+            if(spawnedCount >= 4) {
+                clearInterval(meteorInterval);
+                setTimeout(() => {
+                    warning.classList.remove('active');
+                    hideEventBanner();
+                }, 4000);
+            }
+        }, 3000);
+    }
+
+    function spawnGoldenRushEvent() {
+        SOUNDS.shiny();
+        showEventBanner("💰 GOLDEN RUSH", "All animal income is doubled for 60 seconds!", "#facc15");
+        showToast("✨ GOLDEN RUSH ✨", "Income has been temporarily boosted x2!", true);
+        
+        STATE.goldenRushMultiplier = 2.0;
+        setTimeout(() => {
+            STATE.goldenRushMultiplier = 1.0;
+            hideEventBanner();
+            showToast("Event Ended", "Golden Rush has concluded.");
+        }, 60000);
+    }
+
+    function spawnMegaEggRainEvent() {
+        SOUNDS.buy();
+        showEventBanner("🥚 EGG RAIN", "Free Golden Eggs are dropping from the sky!", "#3b82f6");
+        showToast("📦 EGG RAIN EVENT 📦", "Golden Eggs are falling into the farm!", true);
+
+        let dropped = 0;
+        const rainInterval = setInterval(() => {
+            dropped++;
+            const goldenEggDef = EGGS[2];
+            const egg = spawnEggObject(goldenEggDef, 150, 120, false);
+            egg.userData.velocity = -15;
+            if(dropped >= 6) {
+                clearInterval(rainInterval);
+                setTimeout(hideEventBanner, 4000);
+            }
+        }, 2000);
+    }
+
+    function showEventBanner(iconText, titleText, borderColor) {
+        const banner = document.getElementById('event-banner');
+        document.getElementById('event-icon').innerText = iconText.split(' ')[0];
+        document.getElementById('event-title').innerText = iconText;
+        document.getElementById('event-desc').innerText = titleText;
+        banner.style.borderColor = borderColor;
+        banner.classList.remove('opacity-0', 'scale-90');
+        banner.classList.add('opacity-100', 'scale-100');
+    }
+
+    function hideEventBanner() {
+        const banner = document.getElementById('event-banner');
+        banner.classList.remove('opacity-100', 'scale-100');
+        banner.classList.add('opacity-0', 'scale-90');
+    }
+
+    const possibleEvents = [spawnMeteorEgg, spawnGoldenRushEvent, spawnMegaEggRainEvent];
+    function triggerRandomEvent() {
+        const randomFunc = possibleEvents[Math.floor(Math.random() * possibleEvents.length)];
+        randomFunc();
+    }
+    setInterval(triggerRandomEvent, 600000);
+
+    const particles = [];
+
+    function updateUI() {
+        document.getElementById('ui-money').innerText = formatMoney(STATE.money);
+        document.getElementById('ui-population').innerText = STATE.entities.length;
+        document.getElementById('ui-max-pop').innerText = UPGRADE_DATA.capacity.val(STATE.upgrades.capacity);
+        
+        let totalIncome = 0;
+        STATE.entities.forEach(ent => {
+            let inc = ANIMALS[ent.id].baseIncome * Math.pow(4, ent.level - 1);
+            if(ent.isShiny) inc *= 5;
+            totalIncome += inc;
+        });
+        if(STATE.goldenRushMultiplier) totalIncome *= STATE.goldenRushMultiplier;
+        STATE.income = totalIncome;
+        document.getElementById('ui-income').innerText = `+$${formatMoney(STATE.income)}/sec`;
+    }
+
+    function showToast(title, message, isRare = false) {
+        const container = document.getElementById('toast-container'); const toast = document.createElement('div');
+        toast.className = `toast ${title.includes('WARNING') ? 'toast-meteor' : (isRare ? 'toast-rare' : '')}`;
+        toast.innerHTML = `<div style="font-size: 11px; color: ${isRare?'#facc15':'#93c5fd'}; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px;">${title}</div><div style="font-size: 16px; font-weight: bold;">${message}</div>`;
+        container.appendChild(toast); setTimeout(() => { if(toast.parentNode) toast.parentNode.removeChild(toast); }, 6000);
+    }
+
+    function renderCollection() {
+        const grid = document.getElementById('collection-grid'); grid.innerHTML = '';
+        Object.keys(ANIMALS).forEach(animalKey => {
+            for(let level=1; level<=4; level++) {
+                const unlocked = STATE.discovered[animalKey][level-1]; const animal = ANIMALS[animalKey];
+                const card = document.createElement('div');
+                card.className = `p-4 rounded-xl flex flex-col items-center justify-center text-center transition-all ${unlocked ? 'bg-white/10 border border-white/20 shadow-lg' : 'bg-black/40 border border-white/5 opacity-50'}`;
+                let displayName = level === 1 ? animal.name : `Lvl ${level} ${animal.name}`;
+                let income = animal.baseIncome * Math.pow(4, level - 1);
+                card.innerHTML = `
+                    <div class="text-5xl mb-3 drop-shadow-lg">${unlocked ? (animalKey==='dragon'?'🐉':animalKey==='cow'?'🐮':animalKey==='pig'?'🐷':'🐔') : '🔒'}</div>
+                    <div class="font-black text-sm text-white tracking-wide">${unlocked ? displayName : '???'}</div>
+                    <div class="text-xs text-green-400 font-mono font-bold mt-2 bg-black/40 px-3 py-1 rounded-full">${unlocked ? `+$${income}/s` : 'Unknown'}</div>
+                `;
+                grid.appendChild(card);
+            }
+        });
+    }
+
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'fps-egg-tycoon-crazy';
+    let firebaseConfig; try { firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null; } catch(e) {}
+    let db, auth, userId;
+
+    async function initFirebaseAndGame() {
+        if (firebaseConfig) {
+            try {
+                const app = initializeApp(firebaseConfig); auth = getAuth(app); db = getFirestore(app);
+                if (typeof __initial_auth_token !== 'undefined') await signInWithCustomToken(auth, __initial_auth_token);
+                else await signInAnonymously(auth);
+                userId = auth.currentUser.uid; await loadGame(); setInterval(saveGame, 5000);
+            } catch(err) { console.error("Firebase fail", err); startDefaultGame(); }
+        } else startDefaultGame();
+
+        document.getElementById('instructions-title').innerHTML = "CLICK TO ENTER FARM";
+        document.getElementById('instructions-title').classList.add('click-pulse');
+        document.getElementById('instructions-text').style.display = 'none';
+        instructions.classList.add('ready'); animate();
+    }
+
+    async function loadGame() {
+        try {
+            const snap = await getDoc(doc(db, 'artifacts', appId, 'users', userId, 'saveData', 'main'));
+            if (snap.exists()) {
+                const data = snap.data(); STATE.money = data.money || 150;
+                if(data.discovered) STATE.discovered = data.discovered;
+                if(data.upgrades) STATE.upgrades = { ...STATE.upgrades, ...data.upgrades };
+                if (data.entities && data.entities.length > 0) {
+                    data.entities.forEach(e => spawnEntity(e.id, e.level, e.x, e.z, e.isShiny || false));
+                } else startDefaultGame();
+                updateUI(); showToast("Cloud Sync", "Save data loaded automatically.");
+            } else startDefaultGame();
+        } catch(err) { startDefaultGame(); }
+    }
+
+    async function saveGame() {
+        if (!db || !auth || !auth.currentUser) return;
+        const ind = document.getElementById('save-indicator');
+        if(ind) { ind.style.opacity = '1'; setTimeout(() => { if(ind) ind.style.opacity = '0.4'; }, 1000); }
+        
+        const saveData = {
+            money: STATE.money, discovered: STATE.discovered, upgrades: STATE.upgrades,
+            entities: STATE.entities.map(e => ({ id: e.id, level: e.level, isShiny: e.isShiny, x: parseFloat(e.group.position.x.toFixed(2)), z: parseFloat(e.group.position.z.toFixed(2)) })),
+            timestamp: new Date().toISOString()
+        };
+        try { await setDoc(doc(db, 'artifacts', appId, 'users', userId, 'saveData', 'main'), saveData); } catch(err) { console.error(err); }
+    }
+
+    function startDefaultGame() {
+        if(STATE.entities.length === 0) { spawnEntity('chicken', 1, -2, 12); spawnEntity('chicken', 1, 2, 14); updateUI(); }
+    }
+
+    const clock = new THREE.Clock(); let incomeTimer = 0; let globalTime = 0;
+
+    function animate() {
+        requestAnimationFrame(animate);
+        const dt = Math.min(clock.getDelta(), 0.1);
+        globalTime += dt;
+
+        const timeCycle = (globalTime % 90) / 90;
+        updateSkybox(timeCycle);
+
+        bookHoverTime += dt; cBook.position.y = 3 + Math.sin(bookHoverTime * 2) * 0.2; cBook.rotation.y += dt;
+
+        if (controls.isLocked) {
+            velocity.x -= velocity.x * 10.0 * dt; velocity.z -= velocity.z * 10.0 * dt;
+            direction.z = Number(moveForward) - Number(moveBackward); direction.x = Number(moveRight) - Number(moveLeft); direction.normalize();
+            
+            const speed = 40.0 + (STATE.upgrades.speed * 8.0);
+            if (moveForward || moveBackward) velocity.z -= direction.z * speed * dt;
+            if (moveLeft || moveRight) velocity.x -= direction.x * speed * dt;
+            controls.moveRight(-velocity.x * dt); controls.moveForward(-velocity.z * dt);
+            
+            if(camera.position.x > 55) camera.position.x = 55; if(camera.position.x < -55) camera.position.x = -55;
+            if(camera.position.z > 65) camera.position.z = 65; if(camera.position.z < -65) camera.position.z = -65;
+        }
+
+        checkInteractions();
+
+        EGGS.forEach(e => { if(e.holoMesh) { e.holoMesh.rotation.y += dt; e.holoMesh.position.y = 2.8 + Math.sin(globalTime * 2 + e.cost) * 0.15; } });
+
+        STATE.interactables.forEach(obj => {
+            if(obj.userData.type === 'egg' && obj.position.y > obj.userData.targetY) {
+                obj.userData.velocity += 60 * dt; obj.position.y -= obj.userData.velocity * dt;
+                if(obj.position.y <= obj.userData.targetY) {
+                    obj.position.y = obj.userData.targetY; obj.userData.velocity = 0;
+                    if(obj.userData.isMeteor) {
+                        document.getElementById('canvas-container').classList.add('shake-heavy');
+                        setTimeout(() => document.getElementById('canvas-container').classList.remove('shake-heavy'), 800);
+                        spawnParticles(obj.position, 0xef4444, 40);
+                    }
+                }
+            }
+        });
+
+        sceneryClouds.forEach((c, i) => { c.position.x += dt * (2 + (i%3)); if(c.position.x > 300) c.position.x = -300; });
+
+        incomeTimer += dt;
+        if (incomeTimer >= 1.0) {
+            incomeTimer = 0;
+            if (STATE.income > 0) {
+                STATE.money += STATE.income; updateUI();
+                STATE.entities.forEach(ent => {
+                    let amount = ANIMALS[ent.id].baseIncome * Math.pow(4, ent.level - 1);
+                    if(ent.isShiny) amount *= 5;
+                    const pos = ent.group.position.clone(); pos.y += 2.5; pos.project(camera);
+                    
+                    if(pos.z < 1) {
+                        const sx = (pos.x * .5 + .5) * window.innerWidth; const sy = (pos.y * -.5 + .5) * window.innerHeight;
+                        setTimeout(() => createFloatingMoney(sx, sy, amount, ent.isShiny), Math.random()*300);
+                    }
+                });
+            }
+        }
+
+        STATE.entities.forEach(ent => {
+            ent.moveTimer -= dt;
+            if (ent.moveTimer <= 0) {
+                ent.targetPos.set((Math.random() - 0.5) * (penSize - 6), 0, (Math.random() - 0.5) * (penSize - 6) + 15);
+                ent.moveTimer = 2 + Math.random() * 4;
+            }
+
+            const dir = new THREE.Vector3().subVectors(ent.targetPos, ent.group.position); dir.y = 0;
+            const isMoving = dir.lengthSq() > 0.1;
+            
+            if (isMoving) {
+                dir.normalize(); ent.group.position.addScaledVector(dir, ent.speed * dt);
+                const targetRot = Math.atan2(dir.x, dir.z); let rDiff = targetRot - ent.group.rotation.y;
+                while(rDiff > Math.PI) rDiff -= Math.PI*2; while(rDiff < -Math.PI) rDiff += Math.PI*2;
+                ent.group.rotation.y += rDiff * dt * 5;
+            }
+            if(ent.group.userData.updateAnim) ent.group.userData.updateAnim(globalTime, isMoving);
+        });
+
+        for(let i = particles.length - 1; i >= 0; i--) {
+            const p = particles[i]; p.life -= dt;
+            if(p.life <= 0) { scene.remove(p.mesh); particles.splice(i, 1); continue; }
+            p.velocity.y -= 25 * dt; p.mesh.position.addScaledVector(p.velocity, dt);
+            p.mesh.rotation.x += dt*5; p.mesh.rotation.y += dt*5;
+            const scale = Math.max(0, p.life / p.maxLife); p.mesh.scale.setScalar(scale);
+        }
+
+        renderer.render(scene, camera);
+    }
+
+    window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
+
+    initFirebaseAndGame();
+</script>
+</body>
+</html>
